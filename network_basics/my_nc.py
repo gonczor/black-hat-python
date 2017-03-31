@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import os
 import sys
 import socket
 import getopt
@@ -13,13 +13,15 @@ execute = ''
 target = ''
 upload_destination = ''
 port = ''
+root_password = ''
 
 usage = 'usage: python my_nc.py -t target_host -p target port\n' \
         'Optional arguments are:\n' \
         '-l --listen listen on [host]:[port]\n' \
         '-e --execute=file_to_run execute [file_to_run]\n' \
         '-c --command initialize command line\n' \
-        '-u --upload=destination when receives connection sends file and saves to [destination]\n'
+        '-u --upload=destination when receives connection sends file and saves to [destination]\n' \
+        '-r --root=<root_password> execute sudo su\n'
 
 
 def main():
@@ -39,20 +41,20 @@ def main():
     # get cli options
     try:
         opts, args = getopt.getopt(sys.argv[1:],
-                                   'le:t:p:cu',
-                                   ['listen', 'execute', 'target', 'port', 'command', 'upload'])
+                                   'le:t:p:cur:',
+                                   ['listen', 'execute', 'target', 'port', 'command', 'upload', 'root'])
     except getopt.GetoptError as error:
         print str(error)
         print usage
         sys.exit(-1)
 
     parse_opts(opts)
+
     if not listen and len(target) and port > 0:
         # enter ctrl-d to terminate sending to stdin
         buf = sys.stdin.read()
         client_sender(buf)
-
-    if listen:
+    elif listen:
         server_loop()
 
 
@@ -149,8 +151,20 @@ def client_handler(client_socket):
             while '\n' not in cmd_buffer:
                 cmd_buffer += client_socket.recv(4096)
 
-            response = run_command(cmd_buffer)
+            if len(root_password):
+                run_root_command(cmd_buffer)
+                f = open('f', 'r')
+                response = f.read()
+                f.close()
+            else:
+                response = run_command(cmd_buffer)
             client_socket.send(response)
+
+
+def run_root_command(c):
+    global root_password
+
+    os.system('echo %s|sudo -S %s > f' % (root_password, c.rstrip()))
 
 
 def parse_opts(opts):
@@ -162,6 +176,7 @@ def parse_opts(opts):
     global target
     global upload_destination
     global port
+    global root_password
 
     for option, argument in opts:
         if option in ('-l', '--listen'):
@@ -176,6 +191,8 @@ def parse_opts(opts):
             target = argument
         elif option in ('-p', '--port'):
             port = int(argument)
+        elif option in ('-r', '--root'):
+            root_password = argument
         else:
             print 'Unsupported option'
             sys.exit(-1)
